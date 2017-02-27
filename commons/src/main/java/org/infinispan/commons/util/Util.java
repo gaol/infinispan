@@ -18,6 +18,8 @@ import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.net.Socket;
 import java.nio.ByteBuffer;
+import java.security.AccessController;
+import java.security.PrivilegedAction;
 import java.text.NumberFormat;
 import java.text.SimpleDateFormat;
 import java.util.Arrays;
@@ -114,19 +116,38 @@ public final class Util {
    }
 
    public static ClassLoader[] getClassLoaders(ClassLoader appClassLoader) {
-      if (isOSGiContext()) {
-         return new ClassLoader[] { appClassLoader,   // User defined classes
-               OsgiClassLoader.getInstance(),         // OSGi bundle context needs to be on top of TCCL, system CL, etc.
-               Util.class.getClassLoader(),           // Infinispan classes (not always on TCCL [modular env])
-               ClassLoader.getSystemClassLoader(),    // Used when load time instrumentation is in effect
-               Thread.currentThread().getContextClassLoader() //Used by jboss-as stuff
-         };
+      if (System.getSecurityManager() == null) {
+         if (isOSGiContext()) {
+            return new ClassLoader[] { appClassLoader,   // User defined classes
+                  OsgiClassLoader.getInstance(),         // OSGi bundle context needs to be on top of TCCL, system CL, etc.
+                  Util.class.getClassLoader(),           // Infinispan classes (not always on TCCL [modular env])
+                  ClassLoader.getSystemClassLoader(),    // Used when load time instrumentation is in effect
+                  Thread.currentThread().getContextClassLoader() //Used by jboss-as stuff
+            };
+         } else {
+            return new ClassLoader[] { appClassLoader,   // User defined classes
+                  Util.class.getClassLoader(),           // Infinispan classes (not always on TCCL [modular env])
+                  ClassLoader.getSystemClassLoader(),    // Used when load time instrumentation is in effect
+                  Thread.currentThread().getContextClassLoader() //Used by jboss-as stuff
+            };
+         }
       } else {
-         return new ClassLoader[] { appClassLoader,   // User defined classes
-               Util.class.getClassLoader(),           // Infinispan classes (not always on TCCL [modular env])
-               ClassLoader.getSystemClassLoader(),    // Used when load time instrumentation is in effect
-               Thread.currentThread().getContextClassLoader() //Used by jboss-as stuff
-         };
+         return AccessController.doPrivileged((PrivilegedAction<ClassLoader[]>) () -> {
+            if (isOSGiContext()) {
+               return new ClassLoader[] { appClassLoader,   // User defined classes
+                     OsgiClassLoader.getInstance(),         // OSGi bundle context needs to be on top of TCCL, system CL, etc.
+                     Util.class.getClassLoader(),           // Infinispan classes (not always on TCCL [modular env])
+                     ClassLoader.getSystemClassLoader(),    // Used when load time instrumentation is in effect
+                     Thread.currentThread().getContextClassLoader() //Used by jboss-as stuff
+               };
+            } else {
+               return new ClassLoader[] { appClassLoader,   // User defined classes
+                     Util.class.getClassLoader(),           // Infinispan classes (not always on TCCL [modular env])
+                     ClassLoader.getSystemClassLoader(),    // Used when load time instrumentation is in effect
+                     Thread.currentThread().getContextClassLoader() //Used by jboss-as stuff
+               };
+            }
+         });
       }
    }
 
